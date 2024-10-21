@@ -237,7 +237,7 @@ static void MX_FDCAN1_Init(void)
 {
 
   /* USER CODE BEGIN FDCAN1_Init 0 */
-
+  FDCAN_FilterTypeDef sFilterConfig;
   /* USER CODE END FDCAN1_Init 0 */
 
   /* USER CODE BEGIN FDCAN1_Init 1 */
@@ -249,9 +249,9 @@ static void MX_FDCAN1_Init(void)
   hfdcan1.Init.AutoRetransmission = DISABLE;
   hfdcan1.Init.TransmitPause = DISABLE;
   hfdcan1.Init.ProtocolException = DISABLE;
-  hfdcan1.Init.NominalPrescaler = 1;
-  hfdcan1.Init.NominalSyncJumpWidth = 1;
-  hfdcan1.Init.NominalTimeSeg1 = 2;
+  hfdcan1.Init.NominalPrescaler = 16;
+  hfdcan1.Init.NominalSyncJumpWidth = 4;
+  hfdcan1.Init.NominalTimeSeg1 = 5;
   hfdcan1.Init.NominalTimeSeg2 = 2;
   hfdcan1.Init.DataPrescaler = 1;
   hfdcan1.Init.DataSyncJumpWidth = 1;
@@ -276,7 +276,31 @@ static void MX_FDCAN1_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN FDCAN1_Init 2 */
+  // Configure FDCAN Filter (for accepting all standard IDs into RX FIFO 0)
+  sFilterConfig.IdType = FDCAN_STANDARD_ID;  // Standard ID (11-bit)
+  sFilterConfig.FilterIndex = 0;  // First filter bank
+  sFilterConfig.FilterType = FDCAN_FILTER_MASK;  // Mask-based filter
+  sFilterConfig.FilterConfig = FDCAN_FILTER_TO_RXFIFO0;  // Store in RX FIFO 0
+  sFilterConfig.FilterID1 = 0x000;  // Accept all IDs starting from 0x000
+  sFilterConfig.FilterID2 = 0x000;  // Mask: Accept any ID
 
+  // Apply the filter configuration
+  if (HAL_FDCAN_ConfigFilter(&hfdcan1, &sFilterConfig) != HAL_OK) {
+	  // Filter configuration error handling
+	  Error_Handler();
+  }
+
+  // Start FDCAN
+  if (HAL_FDCAN_Start(&hfdcan1) != HAL_OK) {
+	  // Error starting FDCAN
+	  Error_Handler();
+  }
+
+  // Enable interrupts (if using interrupts for reception)
+  if (HAL_FDCAN_ActivateNotification(&hfdcan1, FDCAN_IT_RX_FIFO0_NEW_MESSAGE, 0) != HAL_OK) {
+	  // Error enabling notifications
+	  Error_Handler();
+  }
   /* USER CODE END FDCAN1_Init 2 */
 
 }
