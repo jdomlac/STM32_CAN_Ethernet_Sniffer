@@ -249,10 +249,10 @@ static void MX_FDCAN1_Init(void)
   hfdcan1.Init.AutoRetransmission = DISABLE;
   hfdcan1.Init.TransmitPause = DISABLE;
   hfdcan1.Init.ProtocolException = DISABLE;
-  hfdcan1.Init.NominalPrescaler = 16;
-  hfdcan1.Init.NominalSyncJumpWidth = 4;
-  hfdcan1.Init.NominalTimeSeg1 = 5;
-  hfdcan1.Init.NominalTimeSeg2 = 2;
+  hfdcan1.Init.NominalPrescaler = 1;
+  hfdcan1.Init.NominalSyncJumpWidth = 1;
+  hfdcan1.Init.NominalTimeSeg1 = 14;
+  hfdcan1.Init.NominalTimeSeg2 = 5;
   hfdcan1.Init.DataPrescaler = 1;
   hfdcan1.Init.DataSyncJumpWidth = 1;
   hfdcan1.Init.DataTimeSeg1 = 1;
@@ -260,11 +260,11 @@ static void MX_FDCAN1_Init(void)
   hfdcan1.Init.MessageRAMOffset = 0;
   hfdcan1.Init.StdFiltersNbr = 0;
   hfdcan1.Init.ExtFiltersNbr = 0;
-  hfdcan1.Init.RxFifo0ElmtsNbr = 0;
+  hfdcan1.Init.RxFifo0ElmtsNbr = 16;
   hfdcan1.Init.RxFifo0ElmtSize = FDCAN_DATA_BYTES_8;
   hfdcan1.Init.RxFifo1ElmtsNbr = 0;
   hfdcan1.Init.RxFifo1ElmtSize = FDCAN_DATA_BYTES_8;
-  hfdcan1.Init.RxBuffersNbr = 0;
+  hfdcan1.Init.RxBuffersNbr = 2;
   hfdcan1.Init.RxBufferSize = FDCAN_DATA_BYTES_8;
   hfdcan1.Init.TxEventsNbr = 0;
   hfdcan1.Init.TxBuffersNbr = 0;
@@ -293,12 +293,6 @@ static void MX_FDCAN1_Init(void)
   // Start FDCAN
   if (HAL_FDCAN_Start(&hfdcan1) != HAL_OK) {
 	  // Error starting FDCAN
-	  Error_Handler();
-  }
-
-  // Enable interrupts (if using interrupts for reception)
-  if (HAL_FDCAN_ActivateNotification(&hfdcan1, FDCAN_IT_RX_FIFO0_NEW_MESSAGE, 0) != HAL_OK) {
-	  // Error enabling notifications
 	  Error_Handler();
   }
   /* USER CODE END FDCAN1_Init 2 */
@@ -401,35 +395,46 @@ void StartDefaultTask(void *argument)
   /* USER CODE BEGIN 5 */
   struct sockaddr_in destAddr;
   int udpSocket;
-  const char *message = "Hello from STM32!";
-  int result;
+  int length;
+  FDCAN_RxHeaderTypeDef rxHeader;
+  uint8_t canData[8];  // We are using classic CAN
+  char udpMessage[150]; // Buffer to format CAN message
 
   // Create UDP socket
   udpSocket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
   if (udpSocket < 0) {
-      printf("Failed to create socket!\n");
-      return;
+	  printf("Failed to create socket!\n");
+	  return;
   }
 
   // Configure destination address (replace with your target IP and port)
   destAddr.sin_family = AF_INET;
-  destAddr.sin_port = htons(12345);  // Destination port (e.g., 12345)
+  destAddr.sin_port = htons(12345);  // Destination port
   destAddr.sin_addr.s_addr = inet_addr("192.168.1.1");  // Destination IP address
 
   while(1) {
-      // Send the UDP message
-      result = sendto(udpSocket, message, strlen(message), 0, (struct sockaddr *)&destAddr, sizeof(destAddr));
-      if (result < 0) {
-          printf("Failed to send UDP packet!\n");
-      } else {
-          printf("UDP packet sent successfully\n");
-      }
 
-      // Delay before sending the next packet (adjust to your requirements)
-      osDelay(1000);  // Send every 1 second
+	  // Check if there's a CAN message in the FIFO
+	  if (HAL_FDCAN_GetRxFifoFillLevel(&hfdcan1, FDCAN_RX_FIFO0) > 0) {
+		  // Receive the CAN FD message
+		  if (HAL_FDCAN_GetRxMessage(&hfdcan1, FDCAN_RX_FIFO0, &rxHeader, canData) == HAL_OK) {
+
+			  //TODO
+			  //Check FD or not, and Ext Id
+			  //Limit copy length
+			  udpMessage[0] = rxHeader.Identifier >> 8 & 0xFF;
+			  udpMessage[1] = rxHeader.Identifier & 0xFF;
+			  udpMessage[2] = (rxHeader.DataLength & 0xF0000) >> 16;  // DLC is in bits [19:16]
+			  memcpy(&udpMessage[3], canData, udpMessage[2]);
+
+			  length = 3 + udpMessage[2];
+
+			  // Send the formatted message via UDP
+			  sendto(udpSocket, udpMessage, length, 0, (struct sockaddr *)&destAddr, sizeof(destAddr));
+		  }
+	  }
   }
-
-  // Close the socket (not usually reached unless exiting the task)
+  // Close the socket if the task ends (unlikely to reach)
   closesocket(udpSocket);
   /* USER CODE END 5 */
 }
